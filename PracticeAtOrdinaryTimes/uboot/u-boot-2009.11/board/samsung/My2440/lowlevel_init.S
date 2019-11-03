@@ -123,7 +123,7 @@
 #define Trp			0x0	/* 2clk */
 #define Trc			0x3	/* 7clk */
 #define Tchr			0x2	/* 3clk */
-#define REFCNT			1113	/* period=15.6us, HCLK=60Mhz, (2048+1-15.6*60) */
+#define REFCNT			1269	/* period=7.8us, HCLK=100Mhz, (2048+1-7.8*100) */
 /**************************************/
 
 _TEXT_BASE:
@@ -131,9 +131,80 @@ _TEXT_BASE:
 
 .globl lowlevel_init
 lowlevel_init:
-	/* memory control configuration */
-	/* make r0 relative the current location so that it */
-	/* reads SMRDATA out of FLASH rather than memory ! */
+    mov ip, lr
+    bl pre_lowlevel_init  /* 板级预初始化 */
+	bl system_clock_init  /* 系统时钟初始化 */
+    bl mem_ctrl_asm_init  /* 内存控制器初始化 */
+    mov lr, ip
+
+	/* everything is fine now */
+	mov	pc, lr
+
+/*
+ * 板级初始化预处理函数: 关看门狗、屏蔽中断
+ */
+pre_lowlevel_init:
+	/* turn off the watchdog */
+    #define pWTCON	0x53000000
+    #define INTMSK	0x4A000008	/* Interrupt-Controller base addresses */
+    #define INTSUBMSK	0x4A00001C
+    #define CLKDIVN	0x4C000014	/* clock divisor register */
+
+	ldr	r0, =pWTCON
+	mov	r1, #0x0
+	str	r1, [r0]
+
+	/*
+	 * mask all IRQs by setting all bits in the INTMR - default
+	 */
+	mov	r1, #0xffffffff
+	ldr	r0, =INTMSK
+	str	r1, [r0]
+
+	ldr	r1, =0x7fff	
+	ldr	r0, =INTSUBMSK
+	str	r1, [r0]
+
+	mov	pc, lr
+
+/*
+ * 系统时钟初始化函数
+ * S3C2440: FCLK:HCLK:PCLK = 1:4:8(FCLK is 405 MHz)  
+ */
+#define CLKDIVN	0x4C000014	
+#define CLK_CTL_BASE	0x4C000000	
+#define MDIV_405	0x7f << 12	
+#define PSDIV_405	0x21	
+#define MDIV  MDIV_405
+#define PSDIV PSDIV_405
+#define CLKDIV 0x5   /* FCLK:HCLK:PCLK = 1:4:8 */
+
+system_clock_init:
+	ldr	r0, =CLKDIVN 
+	mov	r1, #CLKDIV
+	str	r1, [r0]
+
+	/*
+     * 设置arm920t为异步时钟模式
+     * 复位时，arm920t处于快速总线时钟模式，该模式下
+     * core和AMBA都由BCLK控制，设置为异步模式后，core
+     * 由FCLK控制
+     */
+	mrc	p15, 0, r1, c1, c0, 0	
+	orr	r1, r1, #0xc0000000		
+	mcr	p15, 0, r1, c1, c0, 0	
+	
+	mov	r1, #CLK_CTL_BASE	
+	mov	r2, #MDIV
+	add	r2, r2, #PSDIV
+	str	r2, [r1, #0x04]		/* MPLLCON  */
+
+	mov	pc, lr
+
+/*
+ * 存储器控制器初始化函数
+ */
+mem_ctrl_asm_init:
 	ldr     r0, =SMRDATA
 	ldr	r1, _TEXT_BASE
 	sub	r0, r0, r1
