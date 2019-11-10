@@ -71,6 +71,9 @@ ulong flash_init (void)
 #elif defined(CONFIG_AMD_LV800)
 			(AMD_MANUFACT & FLASH_VENDMASK) |
 			(AMD_ID_LV800B & FLASH_TYPEMASK);
+#elif defined(CONFIG_AMD_LV160)
+			(AMD_MANUFACT & FLASH_VENDMASK) |
+			(AMD_ID_LV160B & FLASH_TYPEMASK);
 #else
 #error "Unknown flash configured"
 #endif
@@ -130,7 +133,7 @@ void flash_print_info (flash_info_t * info)
 
 	switch (info->flash_id & FLASH_VENDMASK) {
 	case (AMD_MANUFACT & FLASH_VENDMASK):
-		printf ("AMD: ");
+		printf ("AMD/SPANSION: ");
 		break;
 	default:
 		printf ("Unknown Vendor ");
@@ -143,6 +146,9 @@ void flash_print_info (flash_info_t * info)
 		break;
 	case (AMD_ID_LV800B & FLASH_TYPEMASK):
 		printf ("1x Amd29LV800BB (8Mbit)\n");
+		break;
+	case (AMD_ID_LV160B & FLASH_TYPEMASK):
+		printf ("1x Amd29LV160DB/S29AL016J (16Mbit)\n");
 		break;
 	default:
 		printf ("Unknown Chip Type\n");
@@ -246,9 +252,14 @@ int flash_erase (flash_info_t * info, int s_first, int s_last)
 				    && (result & 0xFFFF) & BIT_ERASE_DONE)
 					chip = READY;
 
-				if (!chip
-				    && (result & 0xFFFF) & BIT_PROGRAM_ERROR)
-					chip = ERR;
+                if (!chip
+				    && (result & 0xFFFF) & BIT_PROGRAM_ERROR) {
+                    result = *addr;
+                    if ((result & 0xFFFF) & BIT_ERASE_DONE)
+                        chip = READY;
+                    else
+                        chip = ERR;
+                }
 
 			} while (!chip);
 
